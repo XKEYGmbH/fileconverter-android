@@ -14,6 +14,7 @@ import java.security.GeneralSecurityException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -36,18 +37,49 @@ import retrofit.http.Streaming;
 import retrofit.mime.TypedFile;
 
 public class FileConverterClient {
-    private static final String API_URL = "https://autoocr.may.co.at:8001/AutoOCRService";
+    private static String API_URL = "https://autoocr.may.co.at:8001/AutoOCRService";
+    private static String username;
+    private static String password;
+    private static long connectionTimeout;
 
-    static class Contributor {
-        String login;
-        int contributions;
+    public static String getURL() {
+        return API_URL;
+    }
+
+    public static void setURL(String API_URL) {
+        FileConverterClient.API_URL = API_URL;
+    }
+
+    public static String getUsername() {
+        return username;
+    }
+
+    public static void setUsername(String username) {
+        FileConverterClient.username = username;
+    }
+
+    public static String getPassword() {
+        return password;
+    }
+
+    public static void setPassword(String password) {
+        FileConverterClient.password = password;
+    }
+
+    public static long getConnectionTimeout() {
+        return connectionTimeout;
+    }
+
+    public static void setConnectionTimeout(long connectionTimeout) {
+        FileConverterClient.connectionTimeout = connectionTimeout;
     }
 
     public interface FileConverter {
         @GET("/Auth")
-        Map<String,AuthResult> Auth();
+        AuthResult Auth();
         static class AuthResult {
-            String AuthResult;
+            @Expose
+            public String AuthResult;
         }
 
         @GET("/GetStatus")
@@ -160,6 +192,21 @@ public class FileConverterClient {
             public String filename;
             public String ext;
         }
+
+        public interface UploadWaitCallback {
+            public enum Stats {
+                UPLOADING,
+                UPLOADED,
+                CONVERTING,
+                CONVERTED,
+                DOWNLOADING,
+                DOWNLOADED
+            };
+            public void success(FileResult result, Response response);
+            public void failure(Exception e);
+            public void onStart();
+            public void onProgress(Stats step);
+        }
     }
 
     private static FileConverter mInstance = null;
@@ -200,10 +247,10 @@ public class FileConverterClient {
             };
 
             okHttpClient.setHostnameVerifier(allHostsValid);
-
+            okHttpClient.setConnectTimeout(connectionTimeout, TimeUnit.SECONDS);
             FileConverterRequestInterceptor requestInterceptor = new FileConverterRequestInterceptor();
-            requestInterceptor.setUser("admin");
-            requestInterceptor.setPassword("autoocr");
+            requestInterceptor.setUser(username);
+            requestInterceptor.setPassword(password);
             // Create a very simple REST adapter which points the GitHub API endpoint.
             return new RestAdapter.Builder()
                     .setRequestInterceptor(requestInterceptor)
@@ -239,24 +286,29 @@ public class FileConverterClient {
             bos.write(buf, 0, len);
         }
         buf = bos.toByteArray();
-
+        bos.flush();
+        bos.close();
         return buf;
     }
 
-    public static void UploadAndWaitFor(final TypedFile file, final Callback<FileConverter.FileResult> callback) {
+    public static void UploadAndWaitFor(final TypedFile file, String profile, final FileConverter.UploadWaitCallback callback) {
         try {
-            FileConverter.UploadJobExResult result = FileConverterClient.getInstance().UploadJob(FileConverterClient.getExtension(file.file().getName()), "default", "label", file);
-
+            callback.onStart();
+            callback.onProgress(FileConverter.UploadWaitCallback.Stats.UPLOADING);
+            FileConverter.UploadJobExResult result = FileConverterClient.getInstance().UploadJob(FileConverterClient.getExtension(file.file().getName()), profile, "ANDROID: "+file.fileName().toString(), file);
+            callback.onProgress(FileConverter.UploadWaitCallback.Stats.UPLOADED);
             String jobID = result.UploadJobExResult.JobGuid;
             Integer status = result.UploadJobExResult.Status;
             final String plainFilename = file.fileName().substring(0, file.fileName().lastIndexOf('.'));
 
             while (status < 4) {
+                callback.onProgress(FileConverter.UploadWaitCallback.Stats.CONVERTING);
                 FileConverter.GetStatusResult statusResult = FileConverterClient.getInstance().GetStatus(jobID);
                 status = statusResult.GetStatusResult;
             }
 
             if (status == 4) {
+                callback.onProgress(FileConverter.UploadWaitCallback.Stats.CONVERTED);
                 FileConverter.GetResultExtResult extResult = FileConverterClient.getInstance().GetResultExt(jobID,0);
                 final String ext = extResult.GetResultExtResult;
 
@@ -264,21 +316,23 @@ public class FileConverterClient {
                     @Override
                     public void success(Response response, Response response2) {
                         try {
+                            callback.onProgress(FileConverter.UploadWaitCallback.Stats.DOWNLOADING);
                             byte[] bytes = FileConverterClient.getBytesFromStream(response.getBody().in());
                             FileConverter.FileResult fileResult = new FileConverter.FileResult();
                             fileResult.ext = ext;
                             fileResult.filename = plainFilename + "." + ext;
                             fileResult.bytes = bytes;
+                            callback.onProgress(FileConverter.UploadWaitCallback.Stats.DOWNLOADED);
                             callback.success(fileResult,response);
                         }
                         catch (Exception e) {
-                            callback.failure(RetrofitError.unexpectedError("", e));
+                            callback.failure(e);
                         }
                     }
 
                     @Override
                     public void failure(RetrofitError error) {
-
+                        callback.failure(error);
                     }
                 });
 
@@ -287,7 +341,7 @@ public class FileConverterClient {
             //callback.success(result, null);
         }
         catch (Exception e) {
-            callback.failure(RetrofitError.unexpectedError("", e));
+            callback.failure(e);
         }
     }
 
