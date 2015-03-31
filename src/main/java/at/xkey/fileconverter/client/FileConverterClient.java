@@ -26,11 +26,15 @@ import javax.net.ssl.X509TrustManager;
 import retrofit.Callback;
 import retrofit.RestAdapter;
 import retrofit.RetrofitError;
+import retrofit.android.AndroidLog;
 import retrofit.client.OkClient;
 import retrofit.client.Response;
 import retrofit.http.Body;
 import retrofit.http.GET;
+import retrofit.http.Headers;
+import retrofit.http.Multipart;
 import retrofit.http.PUT;
+import retrofit.http.Part;
 import retrofit.http.Path;
 import retrofit.http.Query;
 import retrofit.http.Streaming;
@@ -182,9 +186,65 @@ public class FileConverterClient {
                 @Body TypedFile file
         );
 
+        /*@Multipart
+        @PUT("/UploadJobEx6")
+        UploadJobExResult UploadParameterJob(
+                @Part("Ext") String ext,
+                @Part("SettingsName") String settingsName,
+                @Part("Label") String label,
+                @Part("OCREnabled") boolean OCREnabled,
+                @Part("OCREngine") String OCREngine,
+                @Part("PDFFormat") String PDFFormat,
+                @Part("WordConversion") String WordConversion,
+                @Part("ExcelConversion") String ExcelConversion,
+                @Part("PPTConversion") String PPTConversion,
+                @Part("OCRLang") String Language,
+                @Part("FileData") TypedFile file
+        );*/
+
+        @Multipart
+        @PUT("/UploadJobEx6")
+        UploadJobEx6Result UploadParameterJob(
+
+                @Part("application/json") JSONParams params,
+                @Part("FileData") TypedFile file
+        );
+
+        public class JSONParams {
+            final String Ext;
+            final String SettingsName;
+            final String Label;
+            final boolean OCREnabled;
+            final String OCREngine;
+            final String PDFFormat;
+            final String WordConversion;
+            final String ExcelConversion;
+            final String PPTConversion;
+            final String OCRLang;
+            final boolean PDFSecurity = false;
+
+            public JSONParams(String ext, String settingsName, String label, boolean OCREnabled, String OCREngine, String PDFFormat, String wordConversion, String excelConversion, String PPTConversion, String OCRLang) {
+                this.Ext = ext;
+                this.SettingsName = settingsName;
+                this.Label = label;
+                this.OCREnabled = OCREnabled;
+                this.OCREngine = OCREngine;
+                this.PDFFormat = PDFFormat;
+                this.WordConversion = wordConversion;
+                this.ExcelConversion = excelConversion;
+                this.PPTConversion = PPTConversion;
+                this.OCRLang = OCRLang;
+            }
+        }
+
         public class UploadJobExResult {
             @Expose
             public Job UploadJobExResult;
+        }
+
+        public class UploadJobEx6Result {
+            @Expose
+            public Job UploadJobEx6Result;
         }
 
         public class FileResult {
@@ -216,6 +276,10 @@ public class FileConverterClient {
     }
 
     public static FileConverter getInstance(){
+        return getInstance(RestAdapter.LogLevel.NONE);
+    }
+
+    public static FileConverter getInstance(RestAdapter.LogLevel level){
         if(mInstance == null)
         {
 
@@ -256,6 +320,7 @@ public class FileConverterClient {
                     .setRequestInterceptor(requestInterceptor)
                     .setClient(new OkClient(okHttpClient))
                     .setEndpoint(API_URL)
+                    .setLogLevel(level)
                     .build()
                     .create(FileConverter.class);
         }
@@ -310,8 +375,10 @@ public class FileConverterClient {
             if (status == 4) {
                 callback.onProgress(FileConverter.UploadWaitCallback.Stats.CONVERTED);
                 FileConverter.GetResultExtResult extResult = FileConverterClient.getInstance().GetResultExt(jobID,0);
-                final String ext = extResult.GetResultExtResult;
-
+                String extOriginal = extResult.GetResultExtResult;
+                if (extOriginal.isEmpty())
+                    extOriginal = "pdf";
+                final String ext = extOriginal;
                 FileConverterClient.getInstance().GetResultEx(jobID, 0, new Callback<Response>() {
                     @Override
                     public void success(Response response, Response response2) {
@@ -319,7 +386,9 @@ public class FileConverterClient {
                             callback.onProgress(FileConverter.UploadWaitCallback.Stats.DOWNLOADING);
                             byte[] bytes = FileConverterClient.getBytesFromStream(response.getBody().in());
                             FileConverter.FileResult fileResult = new FileConverter.FileResult();
+
                             fileResult.ext = ext;
+
                             fileResult.filename = plainFilename + "." + ext;
                             fileResult.bytes = bytes;
                             callback.onProgress(FileConverter.UploadWaitCallback.Stats.DOWNLOADED);
@@ -356,4 +425,5 @@ public class FileConverterClient {
         }
         return extension;
     }
+
 }

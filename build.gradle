@@ -1,9 +1,41 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.1.0'
+        classpath 'com.github.jcandksolutions.gradle:android-unit-test:2.1.1'
+    }
+}
+
 apply plugin: 'java'
 
+task copyTestResources(type: Copy) {
+    from "${projectDir}/src/test/resources"
+    into "${buildDir}/classes/test"
+}
+processTestResources.dependsOn copyTestResources
+
+sourceSets {
+    //androidTest.setRoot('src/main/java/at.xkey.fileocnverter.client/test')
+}
+
 dependencies {
+    repositories {
+        mavenCentral()
+    }
+
     compile fileTree(dir: 'libs', include: ['*.jar'])
     compile 'com.squareup.retrofit:retrofit:1.8.0'
     compile 'com.squareup.okhttp:okhttp-urlconnection:2.0.0'
     compile 'com.squareup.okhttp:okhttp:2.0.0'
     compile 'org.ow2.util.base64:base64:2.0.0'
+
+    testCompile 'junit:junit:4.+'
+    testCompile 'org.hamcrest:hamcrest-core:1.1'
+    testCompile 'org.hamcrest:hamcrest-library:1.1'
+    testCompile 'org.hamcrest:hamcrest-integration:1.1'
+    testCompile 'org.robolectric:robolectric:2.4'
+
 }
